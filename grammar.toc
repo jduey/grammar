@@ -1,0 +1,547 @@
+
+(add-ns sm (git-dependency "github.com:jduey/state-maybe.git" "state-maybe.toc"))
+(add-ns fr (git-dependency "github.com:jduey/free.git" "free.toc"))
+(add-ns parser (git-dependency "github.com:jduey/parser.git" "parser.toc"))
+(add-ns rd (git-dependency "github.com:jduey/recursive-descent.git" "recursive-descent.toc"))
+
+(defn debug [tag]
+  (parser/ignore
+   (parser/rule "debug"
+                (parser/term-fn (fn [text]
+                                  (print-err tag (subs text 0 10))
+                                  (maybe (list (list "") text)))))))
+
+(def symbol-start
+  (parser/rule "symbol-start"
+               (parser/any parser/alpha (parser/one-of "._<>=+-*/"))))
+
+(def symbol-punct
+  (parser/rule "symbol-punct"
+               (parser/one-of "._<>=*/+!-?")))
+
+(def symbol-char
+  (parser/rule "symbol-char"
+               (parser/any parser/alpha parser/digit symbol-punct)))
+
+(def rest-of-symbol
+  (parser/rule "rest-of-symbol"
+               (parser/none-or-more symbol-char)))
+
+(defprotocol Tagged
+  (untag [x] x))
+
+(deftype tagged-symbol [sym file-name line-num]
+  Tagged
+  (untag [_] sym)
+
+  Stringable
+  (string-list [_]
+    (list (str sym)))
+
+  Hash
+  (sha1 [_] (sha1 sym))
+
+  Eq
+  (=* [_ x]
+    (or (and (instance? Symbol x)
+             (=* sym x))
+        (and (instance? tagged-symbol x)
+             (=* sym (.sym x))))))
+
+(defn symbol? [x]
+  (or (instance? Symbol x)
+      (instance? tagged-symbol x)))
+
+(extend-type Symbol
+  Eq
+  (=* [s x]
+    (symkey= s (untag x))))
+
+(def read-symbol
+  (parser/rule "tagged-symbol"
+               (parser/apply (fn [file-name line-number start the-rest]
+                               ;; (print-err (list-to-str (cons start the-rest)) file-name line-number)
+                               (tagged-symbol (symbol (list-to-str (cons start the-rest))) file-name line-number))
+                             parser/file-name
+                             parser/line-number
+                             symbol-start
+                             rest-of-symbol)))
+
+(def read-keyword
+  (parser/rule "keyword"
+               (parser/apply (fn [start the-rest]
+                               (keyword (list-to-str (cons start the-rest))))
+                             (parser/ignore ":")
+                             symbol-start
+                             rest-of-symbol)))
+
+(def backslash (char 92))
+(def new-line (char 10))
+(def tab (char 9))
+(def backspace (char 8))
+(def carriage-return (char 13))
+(def formfeed (char 12))
+(def double-quote (char 34))
+
+(def read-string-newline
+  (parser/rule "newline"
+               (map (parser/all backslash "n"
+                                parser/inc-line)
+                    (constantly new-line))))
+
+(def read-string-tab
+  (parser/rule "tab"
+               (map (parser/all backslash "t")
+                    (constantly tab))))
+
+(def read-string-backspace
+  (parser/rule "backspace"
+               (map (parser/all backslash "b")
+                    (constantly backspace))))
+
+(def read-string-return
+  (parser/rule "return"
+               (map (parser/all backslash "r")
+                    (constantly carriage-return))))
+
+(def read-string-formfeed
+  (parser/rule "formfeed"
+               (map (parser/all backslash "f")
+                    (constantly formfeed))))
+
+(def read-string-doublequote
+  (parser/rule "doublequote"
+               (map (parser/all backslash double-quote)
+                    (constantly double-quote))))
+
+(def read-string-backslash
+  (parser/rule "backslash"
+               (map (parser/all backslash backslash)
+                    (constantly backslash))))
+
+(defn string-frag-len [s]
+  (inline-text Number "
+    char *str = NULL;
+    int64_t strLen;
+    if (arg0->type == StringType) {
+      str = ((String *)arg0)->buffer;
+      strLen = ((String *)arg0)->len;
+    } else if (arg0->type == SubStringType) {
+      str = ((SubString *)arg0)->buffer;
+      strLen = ((SubString *)arg0)->len;
+    }
+    int64_t len;
+    for (len = 0; len < strLen && str[len] != 34 && str[len] != 92;)
+       len++;
+    return(numberValue(len));
+"))
+
+(def read-string-fragment
+  (parser/rule "read-string-fragment"
+               (parser/term-fn (fn [text]
+                                 (string-frag-len text)))))
+
+(def read-const-string
+  (parser/rule "string"
+               (parser/apply comp
+                             (parser/ignore double-quote)
+                             (map (parser/none-or-more
+                                   (parser/any read-string-fragment
+                                               (parser/apply comp
+                                                             new-line
+                                                             (parser/ignore parser/inc-line))
+                                               read-string-backslash
+                                               read-string-doublequote
+                                               read-string-tab
+                                               read-string-backspace
+                                               read-string-return
+                                               read-string-formfeed
+                                               read-string-newline))
+                                  list-to-str)
+                             (parser/ignore double-quote))))
+
+(defn str-to-int [int-str]
+  (let [code-0 (char-code "0")]
+    (reduce int-str 0
+            (fn [n c]
+              (+ (* n 10) (- (char-code c) code-0))))))
+
+;; only reads integers
+(def read-number
+  (parser/rule "number"
+               (parser/any (map (parser/one-or-more parser/digit)
+                                 str-to-int)
+                           (parser/apply (fn [digits]
+                                           (* -1 (str-to-int digits)))
+                                         (parser/ignore "-")
+                                         (parser/one-or-more parser/digit)))))
+
+(def read-sub-form
+  (parser/recurse "form"))
+
+(def read-quoted
+  (parser/rule "quoted"
+               (parser/apply (fn [arg]
+                               (list 'quote arg))
+                             (parser/ignore "'")
+                             read-sub-form)))
+
+(def read-list
+  (parser/rule "list"
+               (parser/apply comp
+                             (parser/ignore "(")
+                             (parser/none-or-more read-sub-form)
+                             (parser/ignore ")"))))
+
+(def read-hash-map
+  (parser/rule "hash-map"
+               (parser/apply (partial cons 'hash-map)
+                             (parser/ignore "{")
+                             (parser/none-or-more read-sub-form)
+                             (parser/ignore "}"))))
+
+(def read-vector
+  (parser/rule "vector"
+               (parser/apply (partial cons 'vector)
+                             (parser/ignore "[")
+                             (parser/none-or-more read-sub-form)
+                             (parser/ignore "]"))))
+
+(def not-eol
+  (parser/rule "not-eol"
+               (parser/not-char new-line)))
+
+(def read-comment
+  (parser/rule "comment"
+               (parser/all ";"
+                           (parser/ignore (parser/none-or-more not-eol))
+                           new-line
+                           (parser/ignore parser/inc-line))))
+
+(def whitespace
+  (parser/rule "whitespace"
+               (parser/any (parser/one-of " ,")
+                           tab
+                           carriage-return
+                           (parser/all new-line
+                                       (parser/ignore parser/inc-line))
+                           read-comment)))
+
+(def read-sub-dest
+  (parser/recurse "destructure"))
+
+(def read-arg
+  (parser/rule "arg"
+               (parser/apply comp
+                             (parser/ignore (parser/none-or-more whitespace))
+                             read-symbol
+                             (parser/ignore (parser/none-or-more whitespace)))))
+
+(def read-var-arg
+  (parser/rule "var-arg"
+               (parser/all (parser/ignore (parser/none-or-more whitespace))
+                           "&"
+                           read-arg)))
+
+(def read-list-destructure
+  (parser/rule "list-destructure"
+               (parser/apply (fn [args tail]
+                               (comp args (remove tail (partial = "&"))))
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "[")
+                             (parser/none-or-more read-sub-dest)
+                             (parser/any read-var-arg
+                                         (parser/always (list :no-tail)))
+                             (parser/ignore "]"))))
+
+(def read-destructure
+  (parser/recursive-rule "destructure"
+                         (parser/any read-list-destructure
+                                     read-arg)))
+
+(def read-args
+  (parser/rule "args"
+               (parser/apply comp
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "[")
+                             (parser/none-or-more read-destructure)
+                             (parser/any read-var-arg
+                                         (parser/always empty-list))
+                             (parser/ignore "]"))))
+
+(def read-main
+  (parser/rule "main"
+               (parser/apply (partial list* 'main)
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "main")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-args
+                             (parser/one-or-more read-sub-form)
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-single-arity
+  (parser/rule "single-arity"
+               (parser/apply (fn [& vs]
+                               (list (cons 'fn-arity vs)))
+                             read-args
+                             (parser/none-or-more read-sub-form))))
+
+(def read-multi-arity
+  (parser/rule "multi-arity"
+               (parser/apply (partial list 'fn-arity)
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             read-args
+                             (parser/none-or-more read-sub-form)
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-arities
+  (parser/rule "arities"
+               (parser/any read-single-arity
+                           (parser/one-or-more read-multi-arity))))
+
+(def read-defn
+  (parser/rule "defn"
+               (parser/apply (fn [name arities]
+                               (list 'def name (list 'fn name arities)))
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "defn")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-symbol
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-arities
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-fn
+  (parser/rule "fn"
+               (parser/apply (partial list 'fn)
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "fn")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             (parser/any read-symbol
+                                         (parser/apply (fn [file line]
+                                                         (tagged-symbol 'anon file line))
+                                                       parser/file-name
+                                                       parser/line-number))
+                             (parser/ignore (parser/none-or-more whitespace))
+                             read-arities
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-let-binding
+  (parser/rule "let-binding"
+               (parser/all (parser/ignore (parser/none-or-more whitespace))
+                           read-destructure
+                           (parser/ignore (parser/none-or-more whitespace))
+                           read-sub-form)))
+
+(def read-let
+  (parser/rule "let"
+               (parser/apply (partial list* 'let)
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "let")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             (parser/ignore "[")
+                             (parser/none-or-more read-let-binding)
+                             (parser/ignore "]")
+                             (parser/one-or-more read-sub-form)
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-for-let
+  (parser/rule "for-let"
+               (parser/apply (fn [bindings]
+                               (list :let (fn [_ expr]
+                                            (list 'let bindings expr))))
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ":let")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             (parser/ignore "[")
+                             (parser/none-or-more read-let-binding)
+                             (parser/ignore "]"))))
+
+(def read-for-when
+  (parser/rule "for-when"
+               (parser/apply (fn [value]
+                               (list :when (fn [wrap-sym expr]
+                                             (list 'extract
+                                                   (list 'or (list 'and value
+                                                                   (list 'maybe expr))
+                                                         (list 'maybe
+                                                               (list 'zero wrap-sym)))))))
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ":when")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-sub-form)))
+
+(def read-for-when-not
+  (parser/rule "for-when-not"
+               (parser/apply (fn [value]
+                               (list :when-not (fn [wrap-sym expr]
+                                                 (list 'extract
+                                                       (list 'or
+                                                             (list 'and
+                                                                   (list '=* 'nothing value)
+                                                                   (list 'maybe expr))
+                                                             (list 'maybe (list 'zero wrap-sym)))))))
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ":when-not")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-sub-form)))
+
+(defn make-for-binding [binding value]
+  (list :binding (fn [wrap-sym expr]
+                   (list 'flat-map value
+                         (list 'fn 'anon
+                               (list (list 'fn-arity
+                                           (list binding)
+                                           (list expr))))))))
+
+(def read-for-binding
+  (parser/rule "for-binding"
+               (parser/any read-for-let
+                           read-for-when
+                           read-for-when-not
+                           (map read-let-binding
+                                (fn [[bound value]]
+                                  (make-for-binding bound value))))))
+
+(def read-for
+  (parser/rule "for"
+               (parser/apply (fn [bound val bindings body]
+                               (let [wrap-sym (gensym "wrapper_")
+                                     bindings (cons (make-for-binding bound wrap-sym) bindings)]
+                                 (list 'let (list (list wrap-sym val))
+                                       (reduce (reverse bindings) (list 'wrap wrap-sym body)
+                                               (fn [expr [binding value]]
+                                                 (value wrap-sym expr))))))
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "for")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             (parser/ignore "[")
+                             read-destructure
+                             read-sub-form
+                             (parser/none-or-more read-for-binding)
+                             (parser/ignore "]")
+                             read-sub-form
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-apply
+  (parser/rule "apply"
+               (parser/apply (fn [f args]
+                               (list 'apply* f (cons 'list args)))
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "apply")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-sub-form
+                             (parser/one-or-more read-sub-form)
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-apply-to
+  (parser/rule "apply-to"
+               (parser/apply (fn [f arg args]
+                               (let [wrap-sym (gensym "wrapper_")
+                                     msg (str (list 'apply-to f arg args))
+                                     r (list 'let (list (list wrap-sym arg))
+                                             (list 'print-err msg)
+                                             (list
+                                              (list 'apply* (list 'wrap wrap-sym f)
+                                                    (cons 'list (cons wrap-sym args)))))]
+                                 (list 'let (list (list wrap-sym arg))
+                                       (list 'apply* (list 'wrap wrap-sym f)
+                                             (cons 'list (cons wrap-sym args))))))
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "apply-to")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-sub-form
+                             read-sub-form
+                             (parser/none-or-more read-sub-form)
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(def read-comp
+  (parser/rule "comp"
+               (parser/apply (fn [arg args]
+                               (list 'comp* arg (cons 'list args)))
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "comp")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-sub-form
+                             (parser/none-or-more read-sub-form)
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore ")"))))
+
+(defn match-expansion [match-value type match-args]
+  (let [args-sym (gensym "type-args-")
+        args-syms (map (zip-lists match-args
+                                  (range (inc (count match-args))))
+                       (fn [[arg arg-index]]
+                         (list arg (symbol (str "type-arg-" arg-index)))))]
+    (list 'and (list 'instance? type match-value)
+          (list 'let (list (list args-sym (list 'type-args match-value)))
+                (list 'and (list '<= (count match-args)
+                                 (list 'count args-sym))
+                      (list 'let (list (list (comp (map args-syms (fn [[_ x]] x))
+                                                   (list :no-tail))
+                                             args-sym))
+                            (reduce args-syms (list 'maybe args-sym)
+                                    (fn [expr [arg sym]]
+                                      ((= '_ arg) expr (list 'and (list '= arg sym) expr))))))))))
+
+(def read-match
+  (parser/rule "match"
+               (parser/apply match-expansion
+                             (parser/ignore "(")
+                             (parser/ignore (parser/none-or-more whitespace))
+                             (parser/ignore "match")
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-symbol
+                             (parser/ignore (parser/one-or-more whitespace))
+                             read-symbol
+                             (parser/ignore (parser/one-or-more whitespace))
+                             (parser/one-or-more (parser/apply comp
+                                                               (parser/any read-symbol
+                                                                           read-keyword
+                                                                           read-const-string
+                                                                           read-number
+                                                                           read-quoted)
+                                                               (parser/ignore (parser/none-or-more whitespace))))
+                             (parser/ignore ")"))))
+
+(def read-form
+  (parser/recursive-rule "form"
+                         (parser/apply comp
+                                       (parser/ignore (parser/none-or-more whitespace))
+                                       (parser/any read-number
+                                                   read-match
+                                                   read-keyword
+                                                   read-symbol
+                                                   read-quoted
+                                                   read-const-string
+                                                   read-let
+                                                   read-main
+                                                   read-defn
+                                                   read-fn
+                                                   read-for
+                                                   read-comp
+                                                   read-apply
+                                                   read-apply-to
+                                                   read-hash-map
+                                                   read-vector
+                                                   read-list)
+                                       (parser/ignore (parser/none-or-more whitespace)))))
+
