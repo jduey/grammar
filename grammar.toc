@@ -131,7 +131,7 @@
       strLen = ((SubString *)arg0)->len;
     }
     int64_t len;
-    for (len = 0; len < strLen && str[len] != 34 && str[len] != 92;)
+    for (len = 0; len < strLen && str[len] != 34 && str[len] != 92 && str[len] != 10;)
        len++;
     return(numberValue(len));
 "))
@@ -192,6 +192,13 @@
                              (parser/ignore "(")
                              (parser/none-or-more read-sub-form)
                              (parser/ignore ")"))))
+
+(def read-hash-set
+  (parser/rule "hash-map"
+               (parser/apply (partial cons 'hash-set)
+                             (parser/ignore "#{")
+                             (parser/none-or-more read-sub-form)
+                             (parser/ignore "}"))))
 
 (def read-hash-map
   (parser/rule "hash-map"
@@ -541,6 +548,7 @@
                                                    read-apply
                                                    read-apply-to
                                                    read-hash-map
+                                                   read-hash-set
                                                    read-vector
                                                    read-list)
                                        (parser/ignore (parser/none-or-more whitespace)))))
