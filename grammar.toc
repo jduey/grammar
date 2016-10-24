@@ -30,23 +30,23 @@
 (defprotocol Tagged
   (untag [x] x))
 
-(deftype tagged-symbol [sym file-name line-num]
+(deftype tagged-symbol [ns base sym file-name line-num]
   Tagged
   (untag [_] sym)
 
   Stringable
   (string-list [_]
-    (list (str sym)))
+    (list ((= ns "") (str base) (str ns "/" base))))
 
   Hash
-  (sha1 [_] (sha1 sym))
+  (sha1 [_] (sha1 base))
 
   Eq
   (=* [_ x]
     (or (and (instance? Symbol x)
-             (=* sym x))
+             (=* base x))
         (and (instance? tagged-symbol x)
-             (=* sym (.sym x))))))
+             (=* base (.sym x))))))
 
 (defn symbol? [x]
   (or (instance? Symbol x)
@@ -57,13 +57,35 @@
   (=* [s x]
     (symkey= s (untag x))))
 
+(def namespace-punct
+  (parser/rule "namespace-punct"
+               (parser/one-of "._<>=*+!-?")))
+
+(def rest-of-namespace
+  (parser/rule "rest-of-namespace"
+               (parser/none-or-more (parser/any parser/alpha
+                                                parser/digit
+                                                namespace-punct))))
+
+(def read-namespace
+  (parser/rule "namespace"
+               (parser/apply (fn [start the-rest]
+                               (symbol (list-to-str (cons start the-rest))))
+                             parser/alpha
+                             rest-of-namespace
+                             (parser/ignore "/"))))
+
 (def read-symbol
   (parser/rule "tagged-symbol"
-               (parser/apply (fn [file-name line-number start the-rest]
-                               ;; (print-err (list-to-str (cons start the-rest)) file-name line-number)
-                               (tagged-symbol (symbol (list-to-str (cons start the-rest))) file-name line-number))
+               (parser/apply (fn [file-name line-number ns start the-rest]
+                               (let [ns-prefix ((= "" ns) ns (str ns "/"))]
+                                 (tagged-symbol ns (symbol (list-to-str (cons start the-rest)))
+                                                (symbol (list-to-str (comp (list ns-prefix start)
+                                                                           the-rest)))
+                                                file-name line-number)))
                              parser/file-name
                              parser/line-number
+                             (comp read-namespace (parser/always ""))
                              symbol-start
                              rest-of-symbol)))
 
@@ -334,7 +356,7 @@
                              (parser/ignore (parser/one-or-more whitespace))
                              (parser/any read-symbol
                                          (parser/apply (fn [file line]
-                                                         (tagged-symbol 'anon file line))
+                                                         (tagged-symbol "" 'anon 'anon file line))
                                                        parser/file-name
                                                        parser/line-number))
                              (parser/ignore (parser/none-or-more whitespace))
