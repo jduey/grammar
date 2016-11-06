@@ -9,7 +9,7 @@
    (parser/rule "debug"
                 (parser/term-fn (fn [text]
                                   (print-err tag (subs text 0 10))
-                                  (maybe (list (list "") text)))))))
+                                  (maybe (list "" text)))))))
 
 (def symbol-start
   (parser/rule "symbol-start"
@@ -42,17 +42,12 @@
   (sha1 [_] (sha1 base))
 
   Eq
-  (=* [_ x]
-    (or (and (instance? Symbol x)
-             (=* base x))
-        (and (instance? tagged-symbol x)
-             (=* base (.sym x))))))
-
-(defn symbol? [x]
-  (or (instance? Symbol x)
-      (instance? tagged-symbol x)))
+  (=* [_ x] (=* x base)))
 
 (extend-type Symbol
+  Tagged
+  (untag [s] s)
+
   Eq
   (=* [s x]
     (symkey= s (untag x))))
@@ -165,21 +160,20 @@
 
 (def read-const-string
   (parser/rule "string"
-               (parser/apply comp
+               (parser/apply list-to-str
                              (parser/ignore double-quote)
-                             (map (parser/none-or-more
-                                   (parser/any read-string-fragment
-                                               (parser/apply comp
-                                                             new-line
-                                                             (parser/ignore parser/inc-line))
-                                               read-string-backslash
-                                               read-string-doublequote
-                                               read-string-tab
-                                               read-string-backspace
-                                               read-string-return
-                                               read-string-formfeed
-                                               read-string-newline))
-                                  list-to-str)
+                             (parser/none-or-more
+                              (parser/any read-string-fragment
+                                          (parser/apply identity
+                                                        new-line
+                                                        (parser/ignore parser/inc-line))
+                                          read-string-backslash
+                                          read-string-doublequote
+                                          read-string-tab
+                                          read-string-backspace
+                                          read-string-return
+                                          read-string-formfeed
+                                          read-string-newline))
                              (parser/ignore double-quote))))
 
 (defn str-to-int [int-str]
@@ -574,4 +568,3 @@
                                                    read-vector
                                                    read-list)
                                        (parser/ignore (parser/none-or-more whitespace)))))
-
