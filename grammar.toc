@@ -80,7 +80,7 @@
                                                 file-name line-number)))
                              parser/file-name
                              parser/line-number
-                             (comp read-namespace (parser/always ""))
+                             (p/optional read-namespace)
                              symbol-start
                              rest-of-symbol)))
 
@@ -175,12 +175,6 @@
                                           read-string-formfeed
                                           read-string-newline))
                              (parser/ignore double-quote))))
-
-(defn str-to-int [int-str]
-  (let [code-0 (char-code "0")]
-    (reduce int-str 0
-            (fn [n c]
-              (+ (* n 10) (- (char-code c) code-0))))))
 
 ;; only reads integers
 (def read-number
