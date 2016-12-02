@@ -64,7 +64,7 @@
 
 (def read-namespace
   (parser/rule "namespace"
-               (parser/apply (fn [start the-rest]
+               (parser/apply-to (fn [start the-rest]
                                (symbol (list-to-str (cons start the-rest))))
                              parser/alpha
                              rest-of-namespace
@@ -72,7 +72,7 @@
 
 (def read-symbol
   (parser/rule "tagged-symbol"
-               (parser/apply (fn [file-name line-number ns start the-rest]
+               (parser/apply-to (fn [file-name line-number ns start the-rest]
                                (let [ns-prefix ((= "" ns) ns (str ns "/"))]
                                  (tagged-symbol ns (symbol (list-to-str (cons start the-rest)))
                                                 (symbol (list-to-str (comp (list ns-prefix start)
@@ -86,7 +86,7 @@
 
 (def read-keyword
   (parser/rule "keyword"
-               (parser/apply (fn [start the-rest]
+               (parser/apply-to (fn [start the-rest]
                                (keyword (list-to-str (cons start the-rest))))
                              (parser/ignore ":")
                              symbol-start
@@ -160,11 +160,11 @@
 
 (def read-const-string
   (parser/rule "string"
-               (parser/apply list-to-str
+               (parser/apply-to list-to-str
                              (parser/ignore double-quote)
                              (parser/none-or-more
                               (parser/any read-string-fragment
-                                          (parser/apply identity
+                                          (parser/apply-to identity
                                                         new-line
                                                         (parser/ignore parser/inc-line))
                                           read-string-backslash
@@ -181,7 +181,7 @@
   (parser/rule "number"
                (parser/any (map (parser/one-or-more parser/digit)
                                  str-to-int)
-                           (parser/apply (fn [digits]
+                           (parser/apply-to (fn [digits]
                                            (* -1 (str-to-int digits)))
                                          (parser/ignore "-")
                                          (parser/one-or-more parser/digit)))))
@@ -191,35 +191,35 @@
 
 (def read-quoted
   (parser/rule "quoted"
-               (parser/apply (fn [arg]
+               (parser/apply-to (fn [arg]
                                (list 'quote arg))
                              (parser/ignore "'")
                              read-sub-form)))
 
 (def read-list
   (parser/rule "list"
-               (parser/apply comp
+               (parser/apply-to comp
                              (parser/ignore "(")
                              (parser/none-or-more read-sub-form)
                              (parser/ignore ")"))))
 
 (def read-hash-set
   (parser/rule "hash-map"
-               (parser/apply (partial cons 'hash-set)
+               (parser/apply-to (partial cons 'hash-set)
                              (parser/ignore "#{")
                              (parser/none-or-more read-sub-form)
                              (parser/ignore "}"))))
 
 (def read-hash-map
   (parser/rule "hash-map"
-               (parser/apply (partial cons 'hash-map)
+               (parser/apply-to (partial cons 'hash-map)
                              (parser/ignore "{")
                              (parser/none-or-more read-sub-form)
                              (parser/ignore "}"))))
 
 (def read-vector
   (parser/rule "vector"
-               (parser/apply (partial cons 'vector)
+               (parser/apply-to (partial cons 'vector)
                              (parser/ignore "[")
                              (parser/none-or-more read-sub-form)
                              (parser/ignore "]"))))
@@ -237,7 +237,8 @@
 
 (def whitespace
   (parser/rule "whitespace"
-               (parser/any (parser/one-of " ,")
+               (parser/any ","
+                           " "
                            tab
                            carriage-return
                            (parser/all new-line
@@ -249,7 +250,7 @@
 
 (def read-arg
   (parser/rule "arg"
-               (parser/apply comp
+               (parser/apply-to comp
                              (parser/ignore (parser/none-or-more whitespace))
                              read-symbol
                              (parser/ignore (parser/none-or-more whitespace)))))
@@ -262,7 +263,7 @@
 
 (def read-list-destructure
   (parser/rule "list-destructure"
-               (parser/apply (fn [args tail]
+               (parser/apply-to (fn [args tail]
                                (comp args (remove tail (partial = "&"))))
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore "[")
@@ -278,7 +279,7 @@
 
 (def read-args
   (parser/rule "args"
-               (parser/apply comp
+               (parser/apply-to comp
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore "[")
                              (parser/none-or-more read-destructure)
@@ -288,7 +289,7 @@
 
 (def read-main
   (parser/rule "main"
-               (parser/apply (partial list* 'main)
+               (parser/apply-to (partial list* 'main)
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore "main")
@@ -300,14 +301,14 @@
 
 (def read-single-arity
   (parser/rule "single-arity"
-               (parser/apply (fn [& vs]
+               (parser/apply-to (fn [& vs]
                                (list (cons 'fn-arity vs)))
                              read-args
                              (parser/none-or-more read-sub-form))))
 
 (def read-multi-arity
   (parser/rule "multi-arity"
-               (parser/apply (partial list 'fn-arity)
+               (parser/apply-to (partial list 'fn-arity)
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
@@ -323,7 +324,7 @@
 
 (def read-defn
   (parser/rule "defn"
-               (parser/apply (fn [name arities]
+               (parser/apply-to (fn [name arities]
                                (list 'def name (list 'fn name arities)))
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
@@ -337,13 +338,13 @@
 
 (def read-fn
   (parser/rule "fn"
-               (parser/apply (partial list 'fn)
+               (parser/apply-to (partial list 'fn)
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore "fn")
                              (parser/ignore (parser/one-or-more whitespace))
                              (parser/any read-symbol
-                                         (parser/apply (fn [file line]
+                                         (parser/apply-to (fn [file line]
                                                          (tagged-symbol "" 'anon 'anon file line))
                                                        parser/file-name
                                                        parser/line-number))
@@ -361,7 +362,7 @@
 
 (def read-let
   (parser/rule "let"
-               (parser/apply (partial list* 'let)
+               (parser/apply-to (partial list* 'let)
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore "let")
@@ -375,7 +376,7 @@
 
 (def read-for-let
   (parser/rule "for-let"
-               (parser/apply (fn [bindings]
+               (parser/apply-to (fn [bindings]
                                (list :let (fn [_ expr]
                                             (list 'let bindings expr))))
                              (parser/ignore (parser/none-or-more whitespace))
@@ -387,7 +388,7 @@
 
 (def read-for-when
   (parser/rule "for-when"
-               (parser/apply (fn [value]
+               (parser/apply-to (fn [value]
                                (list :when (fn [wrap-sym expr]
                                              (list 'extract
                                                    (list 'or (list 'and value
@@ -401,7 +402,7 @@
 
 (def read-for-when-not
   (parser/rule "for-when-not"
-               (parser/apply (fn [value]
+               (parser/apply-to (fn [value]
                                (list :when-not (fn [wrap-sym expr]
                                                  (list 'extract
                                                        (list 'or
@@ -433,7 +434,7 @@
 
 (def read-for
   (parser/rule "for"
-               (parser/apply (fn [bound val bindings body]
+               (parser/apply-to (fn [bound val bindings body]
                                (let [wrap-sym (gensym "wrapper_")
                                      bindings (cons (make-for-binding bound wrap-sym) bindings)]
                                  (list 'let (list (list wrap-sym val))
@@ -455,7 +456,7 @@
 
 (def read-apply
   (parser/rule "apply"
-               (parser/apply (fn [f args]
+               (parser/apply-to (fn [f args]
                                (list 'apply* f (cons 'list args)))
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
@@ -468,7 +469,7 @@
 
 (def read-apply-to
   (parser/rule "apply-to"
-               (parser/apply (fn [f arg args]
+               (parser/apply-to (fn [f arg args]
                                (let [wrap-sym (gensym "wrapper_")
                                      msg (str (list 'apply-to f arg args))
                                      r (list 'let (list (list wrap-sym arg))
@@ -491,7 +492,7 @@
 
 (def read-comp
   (parser/rule "comp"
-               (parser/apply (fn [arg args]
+               (parser/apply-to (fn [arg args]
                                (list 'comp* arg (cons 'list args)))
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
@@ -521,7 +522,7 @@
 
 (def read-match
   (parser/rule "match"
-               (parser/apply match-expansion
+               (parser/apply-to match-expansion
                              (parser/ignore "(")
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore "match")
@@ -530,7 +531,7 @@
                              (parser/ignore (parser/one-or-more whitespace))
                              read-symbol
                              (parser/ignore (parser/one-or-more whitespace))
-                             (parser/one-or-more (parser/apply comp
+                             (parser/one-or-more (parser/apply-to comp
                                                                (parser/any read-symbol
                                                                            read-keyword
                                                                            read-const-string
@@ -541,7 +542,7 @@
 
 (def read-form
   (parser/recursive-rule "form"
-                         (parser/apply comp
+                         (parser/apply-to comp
                                        (parser/ignore (parser/none-or-more whitespace))
                                        (parser/any read-number
                                                    read-match
