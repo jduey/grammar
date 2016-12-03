@@ -92,49 +92,40 @@
                              symbol-start
                              rest-of-symbol)))
 
-(def backslash (char 92))
-(def new-line (char 10))
-(def tab (char 9))
-(def backspace (char 8))
-(def carriage-return (char 13))
-(def formfeed (char 12))
-(def double-quote (char 34))
-
 (def read-string-newline
   (parser/rule "newline"
-               (map (parser/all backslash "n"
-                                parser/inc-line)
-                    (constantly new-line))))
+               (map (parser/all "\\" "n" parser/inc-line)
+                    (constantly "\n"))))
 
 (def read-string-tab
   (parser/rule "tab"
-               (map (parser/all backslash "t")
-                    (constantly tab))))
+               (map (parser/all "\\" "t")
+                    (constantly "\t"))))
 
 (def read-string-backspace
   (parser/rule "backspace"
-               (map (parser/all backslash "b")
-                    (constantly backspace))))
+               (map (parser/all "\\" "b")
+                    (constantly "\b"))))
 
 (def read-string-return
   (parser/rule "return"
-               (map (parser/all backslash "r")
-                    (constantly carriage-return))))
+               (map (parser/all "\\" "r")
+                    (constantly "\r"))))
 
 (def read-string-formfeed
   (parser/rule "formfeed"
-               (map (parser/all backslash "f")
-                    (constantly formfeed))))
+               (map (parser/all "\\" "f")
+                    (constantly "\f"))))
 
 (def read-string-doublequote
   (parser/rule "doublequote"
-               (map (parser/all backslash double-quote)
-                    (constantly double-quote))))
+               (map (parser/all "\\" "\"")
+                    (constantly "\""))))
 
 (def read-string-backslash
   (parser/rule "backslash"
-               (map (parser/all backslash backslash)
-                    (constantly backslash))))
+               (map (parser/all "\\" "\\")
+                    (constantly "\\"))))
 
 (defn string-frag-len [s]
   (inline-text Number "
@@ -161,11 +152,11 @@
 (def read-const-string
   (parser/rule "string"
                (parser/apply-to list-to-str
-                             (parser/ignore double-quote)
+                             (parser/ignore "\"")
                              (parser/none-or-more
                               (parser/any read-string-fragment
                                           (parser/apply-to identity
-                                                        new-line
+                                                        "\n"
                                                         (parser/ignore parser/inc-line))
                                           read-string-backslash
                                           read-string-doublequote
@@ -174,7 +165,7 @@
                                           read-string-return
                                           read-string-formfeed
                                           read-string-newline))
-                             (parser/ignore double-quote))))
+                             (parser/ignore "\""))))
 
 ;; only reads integers
 (def read-number
@@ -226,22 +217,19 @@
 
 (def not-eol
   (parser/rule "not-eol"
-               (parser/not-char new-line)))
+               (parser/not-char "\n")))
 
 (def read-comment
   (parser/rule "comment"
                (parser/all ";"
                            (parser/ignore (parser/none-or-more not-eol))
-                           new-line
+                           "\n"
                            (parser/ignore parser/inc-line))))
 
 (def whitespace
   (parser/rule "whitespace"
-               (parser/any ","
-                           " "
-                           tab
-                           carriage-return
-                           (parser/all new-line
+               (parser/any "," " " "\t" "\r"
+                           (parser/all "\n"
                                        (parser/ignore parser/inc-line))
                            read-comment)))
 
