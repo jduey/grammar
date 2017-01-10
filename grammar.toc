@@ -65,7 +65,7 @@
 (def read-namespace
   (parser/rule "namespace"
                (parser/apply-to (fn [start the-rest]
-                               (symbol (list-to-str (cons start the-rest))))
+                               (symbol (to-str (cons start the-rest))))
                              parser/alpha
                              rest-of-namespace
                              (parser/ignore "/"))))
@@ -74,8 +74,8 @@
   (parser/rule "tagged-symbol"
                (parser/apply-to (fn [file-name line-number ns start the-rest]
                                (let [ns-prefix ((= "" ns) ns (str ns "/"))]
-                                 (tagged-symbol ns (symbol (list-to-str (cons start the-rest)))
-                                                (symbol (list-to-str (comp (list ns-prefix start)
+                                 (tagged-symbol ns (symbol (to-str (cons start the-rest)))
+                                                (symbol (to-str (comp (list ns-prefix start)
                                                                            the-rest)))
                                                 file-name line-number)))
                              parser/file-name
@@ -87,7 +87,7 @@
 (def read-keyword
   (parser/rule "keyword"
                (parser/apply-to (fn [start the-rest]
-                               (keyword (list-to-str (cons start the-rest))))
+                               (keyword (to-str (cons start the-rest))))
                              (parser/ignore ":")
                              symbol-start
                              rest-of-symbol)))
@@ -151,21 +151,21 @@
 
 (def read-const-string
   (parser/rule "string"
-               (parser/apply-to list-to-str
-                             (parser/ignore "\"")
-                             (parser/none-or-more
-                              (parser/any read-string-fragment
-                                          (parser/apply-to identity
-                                                        "\n"
-                                                        (parser/ignore parser/inc-line))
-                                          read-string-backslash
-                                          read-string-doublequote
-                                          read-string-tab
-                                          read-string-backspace
-                                          read-string-return
-                                          read-string-formfeed
-                                          read-string-newline))
-                             (parser/ignore "\""))))
+               (parser/apply-to to-str
+                                (parser/ignore "\"")
+                                (parser/none-or-more
+                                 (parser/any read-string-fragment
+                                             (parser/apply-to identity
+                                                              "\n"
+                                                              (parser/ignore parser/inc-line))
+                                             read-string-backslash
+                                             read-string-doublequote
+                                             read-string-tab
+                                             read-string-backspace
+                                             read-string-return
+                                             read-string-formfeed
+                                             read-string-newline))
+                                (parser/ignore "\""))))
 
 ;; only reads integers
 (def read-number
