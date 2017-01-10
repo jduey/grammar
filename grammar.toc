@@ -94,7 +94,7 @@
 
 (def read-string-newline
   (parser/rule "newline"
-               (map (parser/all "\\" "n" parser/inc-line)
+               (map (parser/all "\\" "n")
                     (constantly "\n"))))
 
 (def read-string-tab
@@ -139,7 +139,7 @@
       strLen = ((SubString *)arg0)->len;
     }
     int64_t len;
-    for (len = 0; len < strLen && str[len] != 34 && str[len] != 92 && str[len] != 10;)
+    for (len = 0; len < strLen && str[len] != 34 && str[len] != 92;)
        len++;
     return(numberValue(len));
 "))
@@ -155,9 +155,6 @@
                                 (parser/ignore "\"")
                                 (parser/none-or-more
                                  (parser/any read-string-fragment
-                                             (parser/apply-to identity
-                                                              "\n"
-                                                              (parser/ignore parser/inc-line))
                                              read-string-backslash
                                              read-string-doublequote
                                              read-string-tab
