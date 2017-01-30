@@ -80,7 +80,7 @@
                                                 file-name line-number)))
                              parser/file-name
                              parser/line-number
-                             (p/optional read-namespace)
+                             (parser/optional read-namespace)
                              symbol-start
                              rest-of-symbol)))
 
@@ -128,7 +128,7 @@
                     (constantly "\\"))))
 
 (defn string-frag-len [s]
-  (inline-text Number "
+  (inline-C Number "
     char *str = NULL;
     int64_t strLen;
     if (arg0->type == StringType) {
