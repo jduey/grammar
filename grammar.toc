@@ -73,16 +73,16 @@
 (def read-symbol
   (parser/rule "tagged-symbol"
                (parser/apply-to (fn [file-name line-number ns start the-rest]
-                               (let [ns-prefix ((= "" ns) ns (str ns "/"))]
-                                 (tagged-symbol ns (symbol (to-str (cons start the-rest)))
-                                                (symbol (to-str (comp (list ns-prefix start)
-                                                                           the-rest)))
-                                                file-name line-number)))
-                             parser/file-name
-                             parser/line-number
-                             (parser/optional read-namespace)
-                             symbol-start
-                             rest-of-symbol)))
+                                  (let [ns-prefix ((= "" ns) ns (str ns "/"))]
+                                    (tagged-symbol ns (symbol (to-str (cons start the-rest)))
+                                                   (symbol (to-str (comp (list ns-prefix start)
+                                                                         the-rest)))
+                                                   file-name line-number)))
+                                parser/file-name
+                                parser/line-number
+                                (parser/optional read-namespace)
+                                symbol-start
+                                rest-of-symbol)))
 
 (def read-keyword
   (parser/rule "keyword"
@@ -420,24 +420,24 @@
 (def read-for
   (parser/rule "for"
                (parser/apply-to (fn [bound val bindings body]
-                               (let [wrap-sym (gensym "wrapper_")
-                                     bindings (cons (make-for-binding bound wrap-sym) bindings)]
-                                 (list 'let (list (list wrap-sym val))
-                                       (reduce (reverse bindings) (list 'wrap wrap-sym body)
-                                               (fn [expr [binding value]]
-                                                 (value wrap-sym expr))))))
-                             (parser/ignore "(")
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore "for")
-                             (parser/ignore (parser/one-or-more whitespace))
-                             (parser/ignore "[")
-                             read-destructure
-                             read-sub-form
-                             (parser/none-or-more read-for-binding)
-                             (parser/ignore "]")
-                             read-sub-form
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore ")"))))
+                                  (let [wrap-sym (gensym "wrapper_")
+                                        bindings (cons (make-for-binding bound wrap-sym) bindings)]
+                                    (list 'let (list (list wrap-sym val))
+                                          (reduce (reverse bindings) (list 'wrap wrap-sym body)
+                                                  (fn [expr [binding value]]
+                                                    (value wrap-sym expr))))))
+                                (parser/ignore "(")
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore "for")
+                                (parser/ignore (parser/one-or-more whitespace))
+                                (parser/ignore "[")
+                                read-destructure
+                                read-sub-form
+                                (parser/none-or-more read-for-binding)
+                                (parser/ignore "]")
+                                read-sub-form
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore ")"))))
 
 (def read-apply
   (parser/rule "apply"
@@ -508,22 +508,23 @@
 (def read-match
   (parser/rule "match"
                (parser/apply-to match-expansion
-                             (parser/ignore "(")
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore "match")
-                             (parser/ignore (parser/one-or-more whitespace))
-                             read-symbol
-                             (parser/ignore (parser/one-or-more whitespace))
-                             read-symbol
-                             (parser/ignore (parser/one-or-more whitespace))
-                             (parser/one-or-more (parser/apply-to comp
-                                                               (parser/any read-symbol
-                                                                           read-keyword
-                                                                           read-const-string
-                                                                           read-number
-                                                                           read-quoted)
-                                                               (parser/ignore (parser/none-or-more whitespace))))
-                             (parser/ignore ")"))))
+                                (parser/ignore "(")
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore "match")
+                                (parser/ignore (parser/one-or-more whitespace))
+                                read-symbol
+                                (parser/ignore (parser/one-or-more whitespace))
+                                read-symbol
+                                (parser/ignore (parser/one-or-more whitespace))
+                                (parser/one-or-more (parser/apply-to comp
+                                                                     (parser/any read-symbol
+                                                                                 read-keyword
+                                                                                 read-const-string
+                                                                                 read-number
+                                                                                 read-quoted)
+                                                                     (parser/ignore
+                                                                      (parser/none-or-more whitespace))))
+                                (parser/ignore ")"))))
 
 (def read-form
   (parser/recursive-rule "form"
