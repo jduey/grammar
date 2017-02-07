@@ -391,10 +391,9 @@
                                (list :when-not (fn [wrap-sym expr]
                                                  (list 'extract
                                                        (list 'or
-                                                             (list 'and
-                                                                   (list '=* 'nothing value)
-                                                                   (list 'maybe expr))
-                                                             (list 'maybe (list 'zero wrap-sym)))))))
+                                                             (list 'and value
+                                                                   (list 'maybe (list 'zero wrap-sym)))
+                                                             (list 'maybe expr))))))
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore ":when-not")
                              (parser/ignore (parser/one-or-more whitespace))
