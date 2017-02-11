@@ -362,8 +362,7 @@
 (def read-for-let
   (parser/rule "for-let"
                (parser/apply-to (fn [bindings]
-                               (list :let (fn [_ expr]
-                                            (list 'let bindings expr))))
+                               (list :let bindings))
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore ":let")
                              (parser/ignore (parser/one-or-more whitespace))
@@ -374,12 +373,7 @@
 (def read-for-when
   (parser/rule "for-when"
                (parser/apply-to (fn [value]
-                               (list :when (fn [wrap-sym expr]
-                                             (list 'extract
-                                                   (list 'or (list 'and value
-                                                                   (list 'maybe expr))
-                                                         (list 'maybe
-                                                               (list 'zero wrap-sym)))))))
+                               (list :when value))
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore ":when")
                              (parser/ignore (parser/one-or-more whitespace))
@@ -388,50 +382,28 @@
 (def read-for-when-not
   (parser/rule "for-when-not"
                (parser/apply-to (fn [value]
-                               (list :when-not (fn [wrap-sym expr]
-                                                 (list 'extract
-                                                       (list 'or
-                                                             (list 'and value
-                                                                   (list 'maybe (list 'zero wrap-sym)))
-                                                             (list 'maybe expr))))))
+                               (list :when-not value))
                              (parser/ignore (parser/none-or-more whitespace))
                              (parser/ignore ":when-not")
                              (parser/ignore (parser/one-or-more whitespace))
                              read-sub-form)))
-
-(defn make-for-binding [binding value]
-  (list :binding (fn [wrap-sym expr]
-                   (list 'flat-map value
-                         (list 'fn 'anon
-                               (list (list 'fn-arity
-                                           (list binding)
-                                           (list expr))))))))
 
 (def read-for-binding
   (parser/rule "for-binding"
                (parser/any read-for-let
                            read-for-when
                            read-for-when-not
-                           (map read-let-binding
-                                (fn [[bound value]]
-                                  (make-for-binding bound value))))))
+                           read-let-binding)))
 
 (def read-for
   (parser/rule "for"
-               (parser/apply-to (fn [bound val bindings body]
-                                  (let [wrap-sym (gensym "wrapper_")
-                                        bindings (cons (make-for-binding bound wrap-sym) bindings)]
-                                    (list 'let (list (list wrap-sym val))
-                                          (reduce (reverse bindings) (list 'wrap wrap-sym body)
-                                                  (fn [expr [binding value]]
-                                                    (value wrap-sym expr))))))
+               (parser/apply-to (fn [bindings body]
+                                  (list 'for bindings body))
                                 (parser/ignore "(")
                                 (parser/ignore (parser/none-or-more whitespace))
                                 (parser/ignore "for")
                                 (parser/ignore (parser/one-or-more whitespace))
                                 (parser/ignore "[")
-                                read-destructure
-                                read-sub-form
                                 (parser/none-or-more read-for-binding)
                                 (parser/ignore "]")
                                 read-sub-form
