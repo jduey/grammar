@@ -28,10 +28,13 @@
                (parser/none-or-more symbol-char)))
 
 (defprotocol Tagged
+  (tag [s file line])
   (untag [x] x))
 
 (deftype tagged-symbol [ns base sym file-name line-num]
   Tagged
+  (tag [s file line]
+    (tagged-symbol ns base sym file line))
   (untag [_] sym)
 
   Stringable
@@ -46,6 +49,8 @@
 
 (extend-type Symbol
   Tagged
+  (tag [s file line]
+    (tagged-symbol "" s s file line))
   (untag [s] s)
 
   Eq
@@ -412,52 +417,61 @@
 
 (def read-apply
   (parser/rule "apply"
-               (parser/apply-to (fn [f args]
-                               (list 'apply* f (cons 'list args)))
-                             (parser/ignore "(")
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore "apply")
-                             (parser/ignore (parser/one-or-more whitespace))
-                             read-sub-form
-                             (parser/one-or-more read-sub-form)
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore ")"))))
+               (parser/apply-to (fn [file line f args]
+                                  ;; TODO; extract file/line from 'f'
+                                  (list 'apply* f (cons (tag 'list file line) args)))
+                                parser/file-name
+                                parser/line-number
+                                (parser/ignore "(")
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore "apply")
+                                (parser/ignore (parser/one-or-more whitespace))
+                                read-sub-form
+                                (parser/one-or-more read-sub-form)
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore ")"))))
 
 (def read-apply-to
   (parser/rule "apply-to"
-               (parser/apply-to (fn [f arg args]
-                               (let [wrap-sym (gensym "wrapper_")
-                                     msg (str (list 'apply-to f arg args))
-                                     r (list 'let (list (list wrap-sym arg))
-                                             (list 'print-err msg)
-                                             (list
-                                              (list 'apply* (list 'wrap wrap-sym f)
-                                                    (cons 'list (cons wrap-sym args)))))]
-                                 (list 'let (list (list wrap-sym arg))
-                                       (list 'apply* (list 'wrap wrap-sym f)
-                                             (cons 'list (cons wrap-sym args))))))
-                             (parser/ignore "(")
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore "apply-to")
-                             (parser/ignore (parser/one-or-more whitespace))
-                             read-sub-form
-                             read-sub-form
-                             (parser/none-or-more read-sub-form)
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore ")"))))
+               (parser/apply-to (fn [file line f arg args]
+                                  (let [wrap-sym (gensym "wrapper_")
+                                        msg (str (list 'apply-to f arg args))
+                                        r (list 'let (list (list wrap-sym arg))
+                                                (list 'print-err msg)
+                                                (list
+                                                 (list 'apply* (list 'wrap wrap-sym f)
+                                                       (cons (tag 'list file line)
+                                                             (cons wrap-sym args)))))]
+                                    (list 'let (list (list wrap-sym arg))
+                                          (list 'apply* (list 'wrap wrap-sym f)
+                                                (cons (tag 'list file line)
+                                                      (cons wrap-sym args))))))
+                                parser/file-name
+                                parser/line-number
+                                (parser/ignore "(")
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore "apply-to")
+                                (parser/ignore (parser/one-or-more whitespace))
+                                read-sub-form
+                                read-sub-form
+                                (parser/none-or-more read-sub-form)
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore ")"))))
 
 (def read-comp
   (parser/rule "comp"
-               (parser/apply-to (fn [arg args]
-                               (list 'comp* arg (cons 'list args)))
-                             (parser/ignore "(")
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore "comp")
-                             (parser/ignore (parser/one-or-more whitespace))
-                             read-sub-form
-                             (parser/none-or-more read-sub-form)
-                             (parser/ignore (parser/none-or-more whitespace))
-                             (parser/ignore ")"))))
+               (parser/apply-to (fn [file line arg args]
+                                  (list 'comp* arg (cons (tag 'list file line) args)))
+                                parser/file-name
+                                parser/line-number
+                                (parser/ignore "(")
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore "comp")
+                                (parser/ignore (parser/one-or-more whitespace))
+                                read-sub-form
+                                (parser/none-or-more read-sub-form)
+                                (parser/ignore (parser/none-or-more whitespace))
+                                (parser/ignore ")"))))
 
 (defn match-expansion [match-value type match-args]
   (let [args-sym (gensym "type-args-")
