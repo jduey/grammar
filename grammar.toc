@@ -28,7 +28,7 @@
                (parser/none-or-more symbol-char)))
 
 (defprotocol Tagged
-  (tag [s file line])
+  (tag [s file line] s)
   (untag [x] x))
 
 (deftype tagged-symbol [ns base sym file-name line-num]
@@ -56,6 +56,12 @@
   Eq
   (=* [s x]
     (symkey= s (untag x))))
+
+(extend-type List
+  Tagged
+  (tag [l file line]
+    (map l (fn [x]
+             (tag x file line)))))
 
 (def namespace-punct
   (parser/rule "namespace-punct"
@@ -212,10 +218,13 @@
 
 (def read-vector
   (parser/rule "vector"
-               (parser/apply-to (partial cons 'vector)
-                             (parser/ignore "[")
-                             (parser/none-or-more read-sub-form)
-                             (parser/ignore "]"))))
+               (parser/apply-to (fn [file line vals]
+                                  (cons (tag 'vector file line) vals))
+                                parser/file-name
+                                parser/line-number
+                                (parser/ignore "[")
+                                (parser/none-or-more read-sub-form)
+                                (parser/ignore "]"))))
 
 (def not-eol
   (parser/rule "not-eol"
@@ -419,7 +428,8 @@
   (parser/rule "apply"
                (parser/apply-to (fn [file line f args]
                                   ;; TODO; extract file/line from 'f'
-                                  (list 'apply* f (cons (tag 'list file line) args)))
+                                  (list (tag 'apply* file line) f
+                                        (cons (tag 'list file line) args)))
                                 parser/file-name
                                 parser/line-number
                                 (parser/ignore "(")
@@ -435,15 +445,17 @@
   (parser/rule "apply-to"
                (parser/apply-to (fn [file line f arg args]
                                   (let [wrap-sym (gensym "wrapper_")
-                                        msg (str (list 'apply-to f arg args))
+                                        msg (str (list (tag 'apply-to file line) f arg args))
                                         r (list 'let (list (list wrap-sym arg))
                                                 (list 'print-err msg)
                                                 (list
-                                                 (list 'apply* (list 'wrap wrap-sym f)
+                                                 (list (tag 'apply* file line)
+                                                       (list (tag 'wrap file line)
+                                                             (tag wrap-sym file line) f)
                                                        (cons (tag 'list file line)
                                                              (cons wrap-sym args)))))]
-                                    (list 'let (list (list wrap-sym arg))
-                                          (list 'apply* (list 'wrap wrap-sym f)
+                                    (list (tag 'let file line) (list (list (tag wrap-sym file line) arg))
+                                          (list (tag 'apply* file line) (list (tag 'wrap file line) wrap-sym f)
                                                 (cons (tag 'list file line)
                                                       (cons wrap-sym args))))))
                                 parser/file-name
@@ -461,7 +473,7 @@
 (def read-comp
   (parser/rule "comp"
                (parser/apply-to (fn [file line arg args]
-                                  (list 'comp* arg (cons (tag 'list file line) args)))
+                                  (list (tag 'comp* file line) arg (cons (tag 'list file line) args)))
                                 parser/file-name
                                 parser/line-number
                                 (parser/ignore "(")
