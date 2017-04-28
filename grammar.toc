@@ -2,7 +2,10 @@
 (add-ns sm (git-dependency "github.com:jduey/state-maybe.git" "state-maybe.toc"))
 (add-ns fr (git-dependency "github.com:jduey/free.git" "free.toc"))
 (add-ns parser (git-dependency "github.com:jduey/parser.git" "parser.toc"))
-(add-ns rd (git-dependency "github.com:jduey/recursive-descent.git" "recursive-descent.toc"))
+
+;; TODO: delete this if not needed
+(add-ns rd (git-dependency "github.com:jduey/recursive-descent.git" "recursive-descent.toc"
+                           :branch "eliminate-incRef"))
 
 (defn debug [tag]
   (parser/ignore
@@ -152,6 +155,7 @@
     int64_t len;
     for (len = 0; len < strLen && str[len] != 34 && str[len] != 92;)
        len++;
+    dec_and_free(arg0, 1);
     return(numberValue(len));
 "))
 
@@ -203,18 +207,24 @@
                              (parser/ignore ")"))))
 
 (def read-hash-set
-  (parser/rule "hash-map"
-               (parser/apply-to (partial cons 'hash-set)
-                             (parser/ignore "#{")
-                             (parser/none-or-more read-sub-form)
-                             (parser/ignore "}"))))
+  (parser/rule "hash-set"
+               (parser/apply-to (fn [fn ln args]
+                                  (cons (tag 'hash-set fn ln) args))
+                                parser/file-name
+                                parser/line-number
+                                (parser/ignore "#{")
+                                (parser/none-or-more read-sub-form)
+                                (parser/ignore "}"))))
 
 (def read-hash-map
   (parser/rule "hash-map"
-               (parser/apply-to (partial cons 'hash-map)
-                             (parser/ignore "{")
-                             (parser/none-or-more read-sub-form)
-                             (parser/ignore "}"))))
+               (parser/apply-to (fn [fn ln args]
+                                  (cons (tag 'hash-map fn ln) args))
+                                parser/file-name
+                                parser/line-number
+                                (parser/ignore "{")
+                                (parser/none-or-more read-sub-form)
+                                (parser/ignore "}"))))
 
 (def read-vector
   (parser/rule "vector"
@@ -485,26 +495,29 @@
                                 (parser/ignore (parser/none-or-more whitespace))
                                 (parser/ignore ")"))))
 
-(defn match-expansion [match-value type match-args]
+(defn match-expansion [file line match-value type match-args]
   (let [args-sym (gensym "type-args-")
         args-syms (map (zip-lists match-args
                                   (range (inc (count match-args))))
                        (fn [[arg arg-index]]
                          (list arg (symbol (str "type-arg-" arg-index)))))]
-    (list 'and (list 'instance? type match-value)
-          (list 'let (list (list args-sym (list 'type-args match-value)))
-                (list 'and (list '<= (count match-args)
-                                 (list 'count args-sym))
-                      (list 'let (list (list (comp (map args-syms (fn [[_ x]] x))
-                                                   (list :no-tail))
-                                             args-sym))
-                            (reduce args-syms (list 'maybe args-sym)
-                                    (fn [expr [arg sym]]
-                                      ((= '_ arg) expr (list 'and (list '= arg sym) expr))))))))))
+    (tag (list 'and (list 'instance? type match-value)
+               (list 'let (list (list args-sym (list 'type-args match-value)))
+                     (list 'and (list '<= (count match-args)
+                                      (list 'count args-sym))
+                           (list 'let (list (list (comp (map args-syms (fn [[_ x]] x))
+                                                        (list :no-tail))
+                                                  args-sym))
+                                 (reduce args-syms (list 'maybe args-sym)
+                                         (fn [expr [arg sym]]
+                                           ((= '_ arg) expr (list 'and (list '= arg sym) expr))))))))
+         file line)))
 
 (def read-match
   (parser/rule "match"
                (parser/apply-to match-expansion
+                                parser/file-name
+                                parser/line-number
                                 (parser/ignore "(")
                                 (parser/ignore (parser/none-or-more whitespace))
                                 (parser/ignore "match")
